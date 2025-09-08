@@ -1,10 +1,10 @@
 /*httpd.c*/
 
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <errno.h>
 #include <string.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -18,7 +18,7 @@
 struct sHttpRequest{
     char method[8];
     char url[128];
-    int conLength;
+    int content_length;
 };
 
 typedef struct sHttpRequest httpreq;
@@ -71,24 +71,65 @@ int cli_accept(int s){
     return c;
 }
 
-char** split_string(char *str, char *con)
+char** split_string(char *str, char *delimiter)
 {
-    char *p;
-    int i = 0;
-    char **h;
-   
-    for(p = str; *p; p++){
-        while(*p == con[i]){
-            p++;
-            if(i < sizeof(con))
-                i++;
-            else{
-                **h = *str;
-                h ++;
-            }
-        }
+    char *p = str;
+    int header_count = 0;
+    char *next_delimiter;
+    
+    // count the headers
+    while((next_delimiter = strstr(p, delimiter)) != NULL){
+        header_count ++;
+        p = next_delimiter + strlen(delimiter);
     }
-    return h;
+    // if something is there yet, count it 
+    if (*p != '\0') {
+        header_count++;
+    }
+    
+    // memory allocation for the found headers
+    char **header = malloc(sizeof(char*) * (header_count + 1));
+    if(header == NULL){
+        return NULL;
+    }
+
+    p = str;
+    int i = 0;
+
+    while((next_delimiter = strstr(p, delimiter)) != NULL){
+
+        size_t len = next_delimiter - p;
+
+        header[i] = malloc(len +1); // + 1 for null-terminator
+        if(header[i] == NULL){
+            error = "error split_string() (headers)";
+            return NULL;
+        }
+
+        strncpy(header[i], p, len);
+        header[i][len] = '\0'; // add Null-Terminator 
+        
+        // jump to the next header
+        p = next_delimiter + strlen(delimiter);
+        i++;
+    } 
+    if (*p != '\0') {
+       
+        size_t len = next_delimiter - p;
+        header[i] = malloc(len +1);
+        if(header[i] == NULL){
+            error = "error split_string() (headers)";
+            return NULL;
+        }
+        strncpy(header[i], p, len);
+        header[i][len] = '\0';
+        i++;
+    }
+
+    // mark the end of the array
+    header[i] = NULL;
+
+    return header;
 }
 
 // this function looks in in Header-Array for a specific Header name
@@ -113,7 +154,7 @@ httpreq *parse_http(char *str){
     
     char *p, *c;
     httpreq *request;
-    char* headers[] = split_string(str, "\r\n");
+    char **h  = split_string(str, "\r\n");
 
     request = malloc(sizeof(httpreq));
     // METHOD-Parser
@@ -137,12 +178,13 @@ httpreq *parse_http(char *str){
         return 0;
     }
     strncpy(request->url, str, 127);
-    
+  
+    // subdivide the req in his headers
+    char **header = split_string(str, "\r\n");
     // search the Content-Length Header
-    char *content_length_str = get_header_value(headers, "Content-Length");
+    char *content_length_str = get_header_value(header, "Content-Length");
 
     if (content_length_str != NULL) {
-        // Konvertiere den String in eine ganze Zahl. DAS IST DER RICHTIGE WEG.
         request->content_length = atoi(content_length_str);
     } else {
         request->content_length = 0;
