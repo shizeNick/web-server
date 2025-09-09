@@ -19,6 +19,7 @@ struct sHttpRequest{
     char method[8];
     char url[128];
     int content_length;
+    char *body_start;
 };
 
 typedef struct sHttpRequest httpreq;
@@ -28,6 +29,7 @@ char *error;
 
 /* returns 0 on error, or it returns a socket fd */
 int srv_init(int portno){
+    
     int s;
     struct sockaddr_in srv;
     s = socket(AF_INET, SOCK_STREAM, 0);
@@ -71,6 +73,35 @@ int cli_accept(int s){
     return c;
 }
 
+char* read_file(char *path)
+{
+    FILE *fp = fopen(path, "r");
+    if (fp == NULL) {
+        error = "error in read_file()";
+        return 0;
+    }
+
+    // calculate file size
+    fseek(fp, 0, SEEK_END);
+    long file_size = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+
+    // allocate storage for content
+    char *file_content = malloc(file_size + 1);
+    fread(file_content, 1, file_size, fp);
+    
+    // WICHTIG: Überprüfe, ob die Allokierung erfolgreich war
+    if (file_content == NULL) {
+        error = "error in read_file() (malloc failed)";
+        fclose(fp); // Denke daran, die Datei zu schließen
+        return NULL;
+    }
+
+    fclose(fp);
+
+    return file_content;
+}
+
 char** split_string(char *str, char *delimiter)
 {
     char *p = str;
@@ -86,7 +117,6 @@ char** split_string(char *str, char *delimiter)
     if (*p != '\0') {
         header_count++;
     }
-    
     // memory allocation for the found headers
     char **header = malloc(sizeof(char*) * (header_count + 1));
     if(header == NULL){
@@ -115,7 +145,7 @@ char** split_string(char *str, char *delimiter)
     } 
     if (*p != '\0') {
        
-        size_t len = next_delimiter - p;
+        size_t len = strlen(p);
         header[i] = malloc(len +1);
         if(header[i] == NULL){
             error = "error split_string() (headers)";
@@ -130,6 +160,31 @@ char** split_string(char *str, char *delimiter)
     header[i] = NULL;
 
     return header;
+}
+
+void handle_post_data(int content_length, char *body){
+   
+    char **split_pairs;
+    split_pairs = split_string(body, "&");
+
+    char* pair;
+    char* key; 
+    char* value;
+
+    for(int i = 0; split_pairs[i]; i++){
+        
+        pair = split_pairs[i];
+        key = pair;
+        value = strstr(pair, "=");
+
+        if (value != NULL) {
+            *value = '\0'; // Split key (this is important for declare the end of string for key on '=')
+            value++;      // move pointer to the beginning
+        }
+
+        // Jetzt hast du den Key und den Value in zwei getrennten Strings!
+        printf("Key: %s, Value: %s\n", key, value);
+    }
 }
 
 // this function looks in in Header-Array for a specific Header name
@@ -152,11 +207,28 @@ char* get_header_value(char** headers, const char* header_name) {
 /* returns 0 on error or returns httpreq structure */
 httpreq *parse_http(char *str){
     
-    char *p, *c;
-    httpreq *request;
-    char **h  = split_string(str, "\r\n");
+    char *p, *body_start;
+   
+    httpreq *request = malloc(sizeof(httpreq));
+    if(request == NULL){
+        return NULL;
+    }
+
+    char *cut = strstr(str, "\r\n\r\n");
+    if(cut == NULL) {
+        free(request);
+        return 0;
+    }
+    size_t header_len = cut - str;
+    *cut = '\0';
+    body_start = cut+1; 
+    request->body_start = body_start;
+
+    // subdivide the req in his headers
+    char **header = split_string(str, "\r\n");
 
     request = malloc(sizeof(httpreq));
+    
     // METHOD-Parser
     for(p = str; *p && *p != ' '; p++);
     if(*p == ' ')
@@ -167,7 +239,6 @@ httpreq *parse_http(char *str){
         return 0;
     }
     strncpy(request->method, str, 7);
-    
     // URL-Parser
     for(str=++p; *p && *p != ' '; p++);
     if(*p == ' ')
@@ -178,9 +249,8 @@ httpreq *parse_http(char *str){
         return 0;
     }
     strncpy(request->url, str, 127);
-  
-    // subdivide the req in his headers
-    char **header = split_string(str, "\r\n");
+    
+    // parse content-length
     // search the Content-Length Header
     char *content_length_str = get_header_value(header, "Content-Length");
 
@@ -189,7 +259,6 @@ httpreq *parse_http(char *str){
     } else {
         request->content_length = 0;
     }
-
 
     return request;
 }
@@ -262,8 +331,8 @@ void cli_conn(int s, int c)
     char cli_data[512];
     char *p; // cli_read req buf
     char *res; // server http-header buf
+    char *body = malloc(req->content_length + 1);
     
-
     p = cli_read(c);
     if(!p){
         fprintf(stderr, "%s\n", error);
@@ -276,21 +345,33 @@ void cli_conn(int s, int c)
         close(c);
         return;
     }
-    //printf("'%s'\n'%s'\n", req->method, req->url);
     
-    if(!strcmp(req->method, "GET") && !strcmp(req->url, "/app/webpage")){
-        res = "<html><h1>hello over there</h1></html>";
+    if(!strcmp(req->method, "GET") && !strcmp(req->url, "/app/login")){
+        // open .html
+        char *content = read_file("login.html");
+
         http_header(c, 200); // 200 = succes request
-        http_response(c, "text/html",res);
+        http_response(c, "text/html", content);
     }
-    else if (!strcmp(req->method, "POST") && !strcmp(req->url, "/app/webpage")) {
+    else if (!strcmp(req->method, "POST") && !strcmp(req->url, "/app/login")) {
         http_header(c, 200); // 200 = succes request
-        http_response(c, "text/html",res);
+        
+        // open .html
+        char *content = read_file("login.html");
+
+        // read body from socket
+        body[req->content_length] = '\0';
+
+        // handle body data
+        handle_post_data(req->content_length, body);
+
+        //response updated site
+        http_response(c, "text/html", content);
     }
     else{
-        res = "File not found";
+        char *res = "<html><h1>File not found</h1></html>";
         http_header(c, 404); // 404 = file not found
-        http_response(c, "text/plain",res);
+        http_response(c, "text/html",res);
     }
 
     free(req);
