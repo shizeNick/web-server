@@ -88,16 +88,16 @@ char* read_file(char *path)
 
     // allocate storage for content
     char *file_content = malloc(file_size + 1);
-    fread(file_content, 1, file_size, fp);
-    
-    // WICHTIG: Überprüfe, ob die Allokierung erfolgreich war
     if (file_content == NULL) {
         error = "error in read_file() (malloc failed)";
         fclose(fp); // Denke daran, die Datei zu schließen
         return NULL;
     }
-
+    
+    fread(file_content, 1, file_size, fp);
     fclose(fp);
+
+    file_content[file_size] = '\0';
 
     return file_content;
 }
@@ -184,6 +184,12 @@ void handle_post_data(int content_length, char *body){
 
         // Jetzt hast du den Key und den Value in zwei getrennten Strings!
         printf("Key: %s, Value: %s\n", key, value);
+    } 
+    if (split_pairs) {
+        for (int i = 0; split_pairs[i]; i++) {
+            free(split_pairs[i]);
+        }
+        free(split_pairs);
     }
 }
 
@@ -205,8 +211,8 @@ char* get_header_value(char** headers, const char* header_name) {
     return 0; // Header wurde nicht gefunden
 }
 /* returns 0 on error or returns httpreq structure */
-httpreq *parse_http(char *str){
-    
+httpreq *parse_http(char *str)
+{
     char *p, *body_start;
    
     httpreq *request = malloc(sizeof(httpreq));
@@ -219,36 +225,45 @@ httpreq *parse_http(char *str){
         free(request);
         return 0;
     }
+    
+    // copy header
     size_t header_len = cut - str;
-    *cut = '\0';
-    body_start = cut+1; 
-    request->body_start = body_start;
+    char *header_copy = malloc(header_len + 1);
+    strncpy(header_copy, str, header_len);
+    header_copy[header_len] = '\0';
+    
+    char *original_header = header_copy;
+
+    // body start pointer
+    request->body_start = cut + strlen("\r\n\r\n");
 
     // subdivide the req in his headers
-    char **header = split_string(str, "\r\n");
+    char **header = split_string(header_copy, "\r\n");
 
-    request = malloc(sizeof(httpreq));
-    
     // METHOD-Parser
-    for(p = str; *p && *p != ' '; p++);
+    for(p = header_copy; *p && *p != ' '; p++);
     if(*p == ' ')
        *p = 0;  
     else{
         error = "parse_http() NOSPACE error";
         free(request);
+        free(original_header);
         return 0;
     }
-    strncpy(request->method, str, 7);
+    strncpy(request->method, header_copy, sizeof(request->method)-1);
+    request->method[sizeof(request->method)-1] = '\0';
     // URL-Parser
-    for(str=++p; *p && *p != ' '; p++);
+    for(header_copy=++p; *p && *p != ' '; p++);
     if(*p == ' ')
        *p = 0;  
     else{
         error = "parse_http() NO2ndSPACE error";
         free(request);
+        free(original_header);
         return 0;
     }
-    strncpy(request->url, str, 127);
+    strncpy(request->url, header_copy, sizeof(request->url)-1);
+    request->url[sizeof(request->url)-1] = '\0';
     
     // parse content-length
     // search the Content-Length Header
@@ -260,20 +275,89 @@ httpreq *parse_http(char *str){
         request->content_length = 0;
     }
 
+    if (header) {
+        for (int i = 0; header[i] != NULL; i++) {
+            free(header[i]);
+        }
+        free(header);
+    }
+    free(original_header);
+
     return request;
+    
 }
 
 /* return 0 on error or return the data */
 char *cli_read(int c)
 {
-    static char buf[512];
-    memset(buf, 0, 512);
-    if (read(c, buf, 511) < 0){
-        error = "read() error";
-        return 0;
-    }else{
-        return buf;
+    char *total_buf = NULL;
+    size_t total_len = 0;
+    size_t read_len = 0;
+    size_t allocated = 0;
+    char temp_buf[1024];
+    httpreq *req;
+    
+    while(1){
+        read_len = read(c, temp_buf, sizeof(temp_buf));
+        if(read_len <= 0){
+            break;
+        }
+        if(read_len+total_len > allocated){
+            allocated += 2048;
+            total_buf = realloc(total_buf, allocated);
+        }if(total_buf == NULL){
+            return NULL;
+        }
+
+        memcpy(total_buf + total_len, temp_buf, read_len);
+        total_len += read_len;
+        
+   // Check for end of headers
+        if (strstr(total_buf, "\r\n\r\n") != NULL) {
+            break; // Headers fully read
+        }
     }
+
+    // Now, handle the body based on Content-Length
+    httpreq *req_temp = parse_http(total_buf);
+    if (req_temp == NULL) {
+        free(total_buf);
+        return NULL;
+    }
+    
+    size_t header_len = strstr(total_buf, "\r\n\r\n") - total_buf + strlen("\r\n\r\n");
+    size_t body_already_read = total_len - header_len;
+    size_t body_to_read = req_temp->content_length - body_already_read;
+
+    // Read the rest of the body, if any
+    while (body_to_read > 0) {
+        ssize_t read_len = read(c, temp_buf, (body_to_read < sizeof(temp_buf)) ? body_to_read : sizeof(temp_buf));
+        if (read_len <= 0) {
+            // Handle error or unexpected disconnect
+            free(total_buf);
+            free(req_temp);
+            error = "read() error while reading body";
+            return NULL;
+        }
+
+        // Check if buffer needs to be reallocated for the rest of the body
+        if (total_len + read_len + 1 > allocated) {
+            allocated += 2048;
+            total_buf = realloc(total_buf, allocated);
+            if (total_buf == NULL) {
+                free(req_temp);
+                error = "realloc failed for body";
+                return NULL;
+            }
+        }
+        memcpy(total_buf + total_len, temp_buf, read_len);
+        total_len += read_len;
+        body_to_read -= read_len;
+    }
+    
+    total_buf[total_len] = '\0'; // Final null-termination
+    free(req_temp); // Only needed for content_length, now it's done
+    return total_buf;
 }
 
 /*
@@ -288,20 +372,24 @@ char *cli_read(int c)
 
 void http_response(int c, char *content_type, char *data)
 {
-    char buf[512];
-    int n;
-    
-    n = strlen(data);
-    memset(buf, 0, 512);
-    snprintf(buf, 511, 
-        "Content-Type: %s\n"
-        "Content-Length: %d\n"
-        "\n%s\n",
-        content_type, n, data);
-    n = strlen(buf);
-    write(c, buf, n);
+    char header_buf[1024]; 
+    size_t content_length = (data) ? strlen(data) : 0;
 
-    return;
+    snprintf(header_buf, sizeof(header_buf),
+             "HTTP/1.0 200 OK\r\n"
+             "Server: httpd.c\r\n"
+             "Content-Type: %s\r\n"
+             "Content-Length: %zu\r\n"
+             "\r\n", // Wichtig: Die Leerzeile trennt Header und Body
+             content_type, content_length);
+
+    // send header
+    write(c, header_buf, strlen(header_buf));
+
+    // send body
+    if (data && content_length > 0) {
+        write(c, data, content_length);
+    }
 }
 
 void http_header(int c, int status)
@@ -331,21 +419,20 @@ void cli_conn(int s, int c)
     char cli_data[512];
     char *p; // cli_read req buf
     char *res; // server http-header buf
-    char *body = malloc(req->content_length + 1);
     
     p = cli_read(c);
     if(!p){
-        fprintf(stderr, "%s\n", error);
+        fprintf(stderr, "error read client: %s\n", error);
         close(c);
         return;
     }
     req = parse_http(p);
     if(!req){
-        fprintf(stderr, "%s\n", error);
+        fprintf(stderr, "error parsing request: %s\n", error);
         close(c);
         return;
     }
-    
+
     if(!strcmp(req->method, "GET") && !strcmp(req->url, "/app/login")){
         // open .html
         char *content = read_file("login.html");
@@ -354,19 +441,19 @@ void cli_conn(int s, int c)
         http_response(c, "text/html", content);
     }
     else if (!strcmp(req->method, "POST") && !strcmp(req->url, "/app/login")) {
+       
         http_header(c, 200); // 200 = succes request
         
         // open .html
         char *content = read_file("login.html");
 
-        // read body from socket
-        body[req->content_length] = '\0';
-
         // handle body data
-        handle_post_data(req->content_length, body);
-
+        handle_post_data(req->content_length, req->body_start);
+        
         //response updated site
         http_response(c, "text/html", content);
+       
+        free(content);
     }
     else{
         char *res = "<html><h1>File not found</h1></html>";
@@ -375,6 +462,7 @@ void cli_conn(int s, int c)
     }
 
     free(req);
+    free(p);
     close(c);
 
     return;
