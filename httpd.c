@@ -370,23 +370,30 @@ char *cli_read(int c)
         "Content-Length: 12\n"
 */
 
-void http_response(int c, char *content_type, char *data)
+void http_response(int c, int status_code, char *content_type, char *data)
 {
-    char header_buf[1024]; 
+    char header_buf[1024];
     size_t content_length = (data) ? strlen(data) : 0;
-
+    
+    const char *status_message;
+    if (status_code == 200) {
+        status_message = "OK";
+    } else if (status_code == 404) {
+        status_message = "Not Found";
+    } else {
+        status_message = "Internal Server Error";
+    }
+    // prepare header
     snprintf(header_buf, sizeof(header_buf),
-             "HTTP/1.0 200 OK\r\n"
+             "HTTP/1.0 %d %s\r\n"  
              "Server: httpd.c\r\n"
              "Content-Type: %s\r\n"
              "Content-Length: %zu\r\n"
-             "\r\n", // Wichtig: Die Leerzeile trennt Header und Body
-             content_type, content_length);
-
+             "\r\n",
+             status_code, status_message, content_type, content_length);
     // send header
     write(c, header_buf, strlen(header_buf));
-
-    // send body
+    // send body 
     if (data && content_length > 0) {
         write(c, data, content_length);
     }
@@ -437,19 +444,15 @@ void cli_conn(int s, int c)
         // open .html
         char *content = read_file("login.html");
 
-        http_header(c, 200); // 200 = succes request
-        http_response(c, "text/html", content);
+        http_response(c, 200, "text/html", content);
     }else if (!strcmp(req->method, "GET") && !strcmp(req->url, "/style/style.css")) {
         // open .css
         char *content = read_file("style/style.css");
 
-        http_header(c, 200); // 200 = succes request
-        http_response(c, "text/css", content);
+        http_response(c, 200,"text/css", content);
     }
     else if (!strcmp(req->method, "POST") && !strcmp(req->url, "/app/login")) {
        
-        http_header(c, 200); // 200 = succes request
-        
         // open .html
         char *content = read_file("login.html");
 
@@ -457,14 +460,13 @@ void cli_conn(int s, int c)
         handle_post_data(req->content_length, req->body_start);
         
         //response updated site
-        http_response(c, "text/html", content);
+        http_response(c, 200,"text/html", content);
        
         free(content);
     }
     else{
         char *res = "<html><h1>File not found</h1></html>";
-        http_header(c, 404); // 404 = file not found
-        http_response(c, "text/html",res);
+        http_response(c, 404,"text/html",res);
     }
 
     free(req);
