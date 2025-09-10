@@ -1,0 +1,44 @@
+body {
+    background-color: black; 
+}
+
+h1 {
+    font-size: 60;
+    text-align: center;
+    color: powderblue;
+}
+
+div {
+    border: solid 3px;
+}
+
+.shadowbox {
+    margin: auto;
+    width: 15em;
+    border: 1px solid #333333;
+    box-shadow: 8px 8px 5px #444444;
+    padding: 8px 12px;
+    color: white;
+    background-image: linear-gradient(180deg, white, #dddddd 40%, #cccccc);
+    background: #082150;
+    background: -moz-linear-gradient(top, #082150 0%, #94099D 100%);
+    background: -webkit-linear-gradient(top, #082150 0%, #94099D 100%);
+    background: linear-gradient(to bottom, #082150 0%, #94099D 100%);
+}
+
+.item {
+    border: 2px solid rgb(95 97 110);
+    border-radius: 0.5em;
+    padding: 20px;
+    width: 10em;
+}
+
+.container {
+    margin: auto;
+    width: 50%;
+    border: 2px solid rgb(75 70 74);
+    border-radius: 0.5em;
+    font: 1.2em sans-serif;
+    padding: 20px;
+    
+}

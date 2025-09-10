@@ -439,6 +439,12 @@ void cli_conn(int s, int c)
 
         http_header(c, 200); // 200 = succes request
         http_response(c, "text/html", content);
+    }else if (!strcmp(req->method, "GET") && !strcmp(req->url, "/style/style.css")) {
+        // open .css
+        char *content = read_file("style/style.css");
+
+        http_header(c, 200); // 200 = succes request
+        http_response(c, "text/css", content);
     }
     else if (!strcmp(req->method, "POST") && !strcmp(req->url, "/app/login")) {
        

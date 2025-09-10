@@ -1,7 +1,24 @@
-<form action="http://127.0.0.1:8080/dein/api/login" method="post">
-  <label for="username">Username:</label><br>
-  <input type="text" id="username" name="username"><br>
-  <label for="password">Password:</label><br>
-  <input type="password" id="password" name="password"><br><br>
-  <input type="submit" value="Submit">
-</form>
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>flowser-void</title>
+        <link rel="stylesheet" href="/style/style.css"/>
+    </head>
+
+    <body>
+        <h1>login</h1>
+        <form action="http://127.0.0.1:8080/user/acc" method="post">
+            <div class="container">
+                <div class="shadowbox">
+                    <label for="username">Username:</label><br>
+                    <input type="text" id="username" name="username"><br>
+                    <label for="password">Password:</label><br>
+                    <input type="password" id="password" name="password"><br><br>
+                    <input type="submit" value="Submit">
+                </div>
+            </div>
+        </form>
+    </body>
+</html>
