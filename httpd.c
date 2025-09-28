@@ -1,18 +1,17 @@
 /*httpd.c*/
-
-#include <stddef.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <string.h>
+#include "vars.h"
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <stddef.h>
 #include <sys/wait.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
 
-#define LISTENADDR "127.0.0.1"
 
 /* struct's */
 struct sHttpRequest{
@@ -26,6 +25,10 @@ typedef struct sHttpRequest httpreq;
 
 /* global */
 char *error;
+
+char* get_error(){
+    return error;
+}
 
 /* returns 0 on error, or it returns a socket fd */
 int srv_init(int portno){
@@ -117,6 +120,7 @@ char** split_string(char *str, char *delimiter)
     if (*p != '\0') {
         header_count++;
     }
+
     // memory allocation for the found headers
     char **header = malloc(sizeof(char*) * (header_count + 1));
     if(header == NULL){
@@ -474,42 +478,4 @@ void cli_conn(int s, int c)
     close(c);
 
     return;
-}
-
-int main(int argc, char *argv[])
-{
-    int s, c; 
-    char *port;
-    
-    if(argc < 2){
-        fprintf(stderr, "Usage: %s <listening port>\n", argv[0]);
-        return -1;
-    }else{
-        port = argv[1];
-    }
-
-    s = srv_init(atoi(port));
-    if(!s){
-        fprintf(stderr, error, "%s\n", error);
-        return -1;
-    }
-    printf("Listening on %s:%s\n", LISTENADDR, port);
-    while(1){
-        c = cli_accept(s);
-        if(!c){
-            fprintf(stderr, "%s\n", error);
-            continue;
-        }
-        
-        printf("incomming connection\n");
-        if (!(fork())){
-            cli_conn(s, c);
-        }
-            /* for the main process: return the new process' id
-             * for the new process: return 0
-             * */
-
-    }
-
-    return -1;
 }
