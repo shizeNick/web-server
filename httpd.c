@@ -76,7 +76,7 @@ int cli_accept(int s){
     return c;
 }
 
-char* read_file(char *path)
+char *read_file(char *path)
 {
     FILE *fp = fopen(path, "r");
     if (fp == NULL) {
