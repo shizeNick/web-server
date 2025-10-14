@@ -444,9 +444,9 @@ void cli_conn(int s, int c)
         return;
     }
 
-    if(!strcmp(req->method, "GET") && !strcmp(req->url, "/app/login")){
+    if(!strcmp(req->method, "GET") && !strcmp(req->url, "/")){
         // open .html
-        char *content = read_file("login.html");
+        char *content = read_file("index.html");
 
         http_response(c, 200, "text/html", content);
     }else if (!strcmp(req->method, "GET") && !strcmp(req->url, "/style/style.css")) {
@@ -455,10 +455,10 @@ void cli_conn(int s, int c)
 
         http_response(c, 200,"text/css", content);
     }
-    else if (!strcmp(req->method, "POST") && !strcmp(req->url, "/app/login")) {
+    else if (!strcmp(req->method, "POST") && !strcmp(req->url, "/")) {
        
         // open .html
-        char *content = read_file("login.html");
+        char *content = read_file("index.html");
 
         // handle body data
         handle_post_data(req->content_length, req->body_start);
