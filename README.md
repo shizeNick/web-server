@@ -10,7 +10,5 @@ At the moment the server is possible to work with POST and GET requests, parse h
 ... so also sending browser known languages like html, css and javascript
 
 ### current workstation
-The next goal is to build this server around a dashboard, which i will code myself with a static website.
-This dashboard should give information about cyber-security related and importand data, such as the ip-addresses
-of your local network devices, state of the network (maybe also some stats of your own lab, if i'll be able to implement a flexible solution)
-and whatever the time gives.
+The next goal is to build a dashboard around this server.
+Maybe it will become my own little NAS system, build completely by myself.
